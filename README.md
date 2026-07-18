@@ -1,6 +1,6 @@
-# Alpha Nasdaq OCIO returns pipeline
+# Nasdaq OCIO returns pipeline: an example of automating repeated retrieval of data into airtable and ultimately to excel via claude.
 
-Keeps the quarterly Alpha Nasdaq OCIO index returns current in Airtable and lets
+Keeps the quarterly Nasdaq OCIO index returns current in Airtable and lets
 an analyst pull them into Excel through Claude. Two halves:
 
 1. **Ingestion (scheduled, unattended).** A GitHub Actions job polls the public
