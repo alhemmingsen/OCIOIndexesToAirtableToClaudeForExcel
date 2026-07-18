@@ -1,0 +1,217 @@
+"""
+fetch_ocio_returns.py
+---------------------
+Grab the quarterly Alpha Nasdaq OCIO index returns off the public results page
+and turn them into one wide record per index.
+
+Primary path (parse_html):
+    The results page at RESULTS_URL publishes an HTML table under a heading of
+    the form "M/D/YYYY Index Results". We read the as-of date from that heading
+    and the returns from the first table on the page.
+
+Fallback path (parse_pdf_with_claude):
+    When the figures are only in the snapshot PDF (or the table markup changes),
+    hand the PDF to the Claude API and ask for the same structured JSON. This
+    mirrors the multi-pass image/PDF extraction approach and needs
+    ANTHROPIC_API_KEY.
+
+Both paths return the SAME record shape, one dict per index:
+    {
+        "index":  "Endowments & Foundations Index",
+        "as_of":  "2026-03-31",     # quarter-end ISO date
+        "returns": {"MRQ": -1.08, "1YR": 13.33, "3YR": 10.94,
+                    "5YR": 6.38, "7YR": 8.13, "10YR": 8.11},
+        "source": "html" | "pdf",
+    }
+Missing cells (the site prints "---" when there are too few observations) are
+simply omitted from the returns dict.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import base64
+import datetime as dt
+
+import requests
+from bs4 import BeautifulSoup
+
+RESULTS_URL = "https://alphacapitalmgmt.com/alpha-nasdaq-ocio-indices/"
+
+# Map the column header text on the page to our field names. The public table
+# carries these six periods; YTD is not published there (it lives in the secure
+# portal), so we never fabricate it.
+PERIOD_HEADERS = {
+    "MRQ": "MRQ",
+    "1 YR": "1YR",
+    "3 YR": "3YR",
+    "5 YR": "5YR",
+    "7 YR": "7YR",
+    "10 YR": "10YR",
+}
+
+MISSING_TOKENS = {"---", "--", "-", "", "n/a", "na"}
+
+
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+def _as_of_to_iso(text: str) -> str:
+    """'3/31/2026' -> '2026-03-31'."""
+    m, d, y = (int(p) for p in text.strip().split("/"))
+    return dt.date(y, m, d).isoformat()
+
+
+def _num(cell: str) -> float | None:
+    cell = cell.strip().replace("%", "").replace(",", "")
+    if cell.lower() in MISSING_TOKENS:
+        return None
+    try:
+        return float(cell)
+    except ValueError:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Primary: parse the HTML results table
+# --------------------------------------------------------------------------- #
+def parse_html(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, "html.parser")
+
+    # As-of date from the "M/D/YYYY Index Results" heading.
+    heading = soup.find(string=re.compile(r"\d{1,2}/\d{1,2}/\d{4}\s+Index Results"))
+    if not heading:
+        raise ValueError("Could not find an 'Index Results' heading on the page")
+    as_of = _as_of_to_iso(re.search(r"(\d{1,2}/\d{1,2}/\d{4})", heading).group(1))
+
+    # The results table is the first real <table> on the page.
+    table = soup.find("table")
+    if table is None:
+        raise ValueError("No results table found; use the PDF fallback")
+
+    rows = table.find_all("tr")
+    header_cells = [c.get_text(strip=True) for c in rows[0].find_all(["th", "td"])]
+    # Column index -> our field name (skip the first "INDEX" column).
+    col_to_field = {}
+    for i, h in enumerate(header_cells[1:], start=1):
+        field = PERIOD_HEADERS.get(h.upper().replace("  ", " ").strip())
+        if field:
+            col_to_field[i] = field
+
+    records: list[dict] = []
+    for tr in rows[1:]:
+        cells = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
+        if not cells or not cells[0]:
+            continue
+        name = cells[0]
+        # Skip the footnote row ("--- Indicates ...").
+        if name.startswith("---") or "Indicates" in name:
+            continue
+        returns = {}
+        for col_i, field in col_to_field.items():
+            if col_i < len(cells):
+                val = _num(cells[col_i])
+                if val is not None:
+                    returns[field] = val
+        if returns:
+            records.append({"index": name, "as_of": as_of,
+                            "returns": returns, "source": "html"})
+    return records
+
+
+def fetch_html() -> list[dict]:
+    resp = requests.get(RESULTS_URL, timeout=30,
+                        headers={"User-Agent": "nasdaq-ocio-bot/1.0"})
+    resp.raise_for_status()
+    return parse_html(resp.text)
+
+
+# --------------------------------------------------------------------------- #
+# Fallback: hand the snapshot PDF to Claude and ask for the same JSON
+# --------------------------------------------------------------------------- #
+_EXTRACTION_PROMPT = (
+    "This PDF is the quarterly Alpha Nasdaq OCIO Indices snapshot. Return ONLY "
+    "JSON, no prose, no code fences. Shape: "
+    '{"as_of":"YYYY-MM-DD","rows":[{"index":"<name>","MRQ":<num|null>,'
+    '"1YR":<num|null>,"3YR":<num|null>,"5YR":<num|null>,"7YR":<num|null>,'
+    '"10YR":<num|null>}]}. Use the exact index names as printed. Returns are '
+    'percentages as numbers (e.g. -1.08). Use null where the cell shows '
+    '"---". Read the as_of from the report date.'
+)
+
+
+def parse_pdf_with_claude(pdf_bytes: bytes) -> list[dict]:
+    """
+    Extract the same records from the snapshot PDF via the Claude API.
+    Requires ANTHROPIC_API_KEY. Model is overridable with ANTHROPIC_MODEL.
+    """
+    import json
+
+    api_key = os.environ["ANTHROPIC_API_KEY"]
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-5")
+    b64 = base64.standard_b64encode(pdf_bytes).decode("ascii")
+
+    resp = requests.post(
+        "https://api.anthropic.com/v1/messages",
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": 4000,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type": "document",
+                    "source": {"type": "base64",
+                                "media_type": "application/pdf",
+                                "data": b64}},
+                    {"type": "text", "text": _EXTRACTION_PROMPT},
+                ],
+            }],
+        },
+        timeout=120,
+    )
+    resp.raise_for_status()
+    text = "".join(b.get("text", "") for b in resp.json()["content"]
+                if b.get("type") == "text").strip()
+    text = text.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    data = json.loads(text)
+
+    as_of = data["as_of"]
+    out: list[dict] = []
+    for row in data["rows"]:
+        returns = {f: row[f] for f in ("MRQ", "1YR", "3YR", "5YR", "7YR", "10YR")
+                if row.get(f) is not None}
+        if returns:
+            out.append({"index": row["index"], "as_of": as_of,
+                        "returns": returns, "source": "pdf"})
+    return out
+
+
+def fetch_pdf(pdf_url: str) -> list[dict]:
+    resp = requests.get(pdf_url, timeout=60,
+                        headers={"User-Agent": "nasdaq-ocio-bot/1.0"})
+    resp.raise_for_status()
+    return parse_pdf_with_claude(resp.content)
+
+
+# --------------------------------------------------------------------------- #
+# Public entry: try HTML, fall back to PDF if configured
+# --------------------------------------------------------------------------- #
+def fetch_latest(pdf_fallback_url: str | None = None) -> list[dict]:
+    try:
+        records = fetch_html()
+        if records:
+            return records
+        print("[warn] HTML table parsed to zero rows")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[warn] HTML parse failed: {exc}")
+
+    if pdf_fallback_url:
+        print("[info] falling back to PDF extraction via Claude")
+        return fetch_pdf(pdf_fallback_url)
+    return []
