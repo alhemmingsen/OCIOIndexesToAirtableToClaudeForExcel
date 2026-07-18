@@ -1,0 +1,81 @@
+<svg viewBox="0 0 1120 580" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#475569"/>
+    </marker>
+    <marker id="ar" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#0ea5e9"/>
+    </marker>
+    <style>
+      .head { rx:8; stroke-width:1.5; }
+      .life { stroke:#cbd5e1; stroke-width:1.5; stroke-dasharray:4 4; }
+      .hn   { font-size:12px; font-weight:700; fill:#111827; text-anchor:middle; }
+      .hs   { font-size:10.5px; fill:#64748b; text-anchor:middle; }
+      .req  { stroke:#475569; stroke-width:1.8; fill:none; marker-end:url(#a); }
+      .res  { stroke:#0ea5e9; stroke-width:1.8; fill:none; marker-end:url(#ar); stroke-dasharray:6 3; }
+      .msg  { font-size:11px; fill:#334155; text-anchor:middle; }
+      .msgr { font-size:11px; fill:#0369a1; text-anchor:middle; }
+    </style>
+  </defs>
+
+  <text x="560" y="28" font-size="18" font-weight="700" fill="#0f172a" text-anchor="middle">Read path: filling an OCIO peer-comparison template</text>
+
+  <!-- x centers: 100, 340, 570, 800, 1010 -->
+  <rect class="head" x="30"  y="50" width="140" height="52" fill="#fff1ed" stroke="#d97757"/>
+  <text x="100" y="72" class="hn">Analyst</text>
+  <text x="100" y="90" class="hs">in Excel</text>
+  <line class="life" x1="100" y1="102" x2="100" y2="540"/>
+
+  <rect class="head" x="270" y="50" width="140" height="52" fill="#fff1ed" stroke="#d97757"/>
+  <text x="340" y="72" class="hn">Claude for Excel</text>
+  <text x="340" y="90" class="hs">agent</text>
+  <line class="life" x1="340" y1="102" x2="340" y2="540"/>
+
+  <rect class="head" x="500" y="50" width="140" height="52" fill="#faf5ff" stroke="#a855f7"/>
+  <text x="570" y="72" class="hn">nasdaq-ocio-returns</text>
+  <text x="570" y="90" class="hs">skill</text>
+  <line class="life" x1="570" y1="102" x2="570" y2="540"/>
+
+  <rect class="head" x="730" y="50" width="140" height="52" fill="#ecfeff" stroke="#06b6d4"/>
+  <text x="800" y="72" class="hn">Airtable MCP</text>
+  <text x="800" y="90" class="hs">read-only</text>
+  <line class="life" x1="800" y1="102" x2="800" y2="540"/>
+
+  <rect class="head" x="940" y="50" width="140" height="52" fill="#fef3c7" stroke="#f59e0b"/>
+  <text x="1010" y="72" class="hn">OCIO Index Returns</text>
+  <text x="1010" y="90" class="hs">Airtable table</text>
+  <line class="life" x1="1010" y1="102" x2="1010" y2="540"/>
+
+  <!-- Messages -->
+  <path class="req" d="M100,140 L338,140"/>
+  <text x="220" y="132" class="msg">"fill OCIO returns, Q1 2026"</text>
+
+  <path class="req" d="M340,180 L568,180"/>
+  <text x="455" y="172" class="msg">load skill, read index_registry</text>
+
+  <path class="res" d="M570,220 L342,220"/>
+  <text x="456" y="212" class="msgr">resolved index names</text>
+
+  <path class="req" d="M340,262 L798,262"/>
+  <text x="570" y="254" class="msg">read rows: Index in [...] , Date = 2026-03-31</text>
+
+  <path class="req" d="M800,302 L1008,302"/>
+  <text x="904" y="294" class="msg">SELECT rows</text>
+
+  <path class="res" d="M1010,342 L802,342"/>
+  <text x="906" y="334" class="msgr">wide rows (MRQ..10YR)</text>
+
+  <path class="res" d="M800,382 L342,382"/>
+  <text x="570" y="374" class="msgr">returns by index</text>
+
+  <path class="res" d="M340,432 L102,432"/>
+  <text x="221" y="424" class="msgr">filled template + gap list</text>
+
+  <rect x="640" y="470" width="440" height="60" rx="8" fill="#fef2f2" stroke="#ef4444" stroke-width="1.3"/>
+  <text x="860" y="493" font-size="12" font-weight="700" fill="#b91c1c" text-anchor="middle">Guardrail</text>
+  <text x="860" y="513" font-size="11" fill="#7f1d1d" text-anchor="middle">skill never writes; blanks ("---" in source) are</text>
+  <text x="860" y="527" font-size="11" fill="#7f1d1d" text-anchor="middle">reported as gaps, never backfilled</text>
+
+  <text x="300" y="497" class="msg">solid = request</text>
+  <text x="300" y="515" class="msgr">dashed = response</text>
+</svg>
